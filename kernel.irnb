@@ -1,0 +1,133 @@
+{
+  "cells": [
+    {
+      "metadata": {
+        "_uuid": "538165722e84e6150d326bbdafdc347b9fa6346f",
+        "_execution_state": "idle",
+        "trusted": true
+      },
+      "cell_type": "code",
+      "source": "## Importing packages\n\n# This R environment comes with all of CRAN and many other helpful packages preinstalled.\n# You can see which packages are installed by checking out the kaggle/rstats docker image: \n# https://github.com/kaggle/docker-rstats\n\nlibrary(tidyverse) # metapackage with lots of helpful functions\n\n## Running code\n\n# In a notebook, you can run a single code cell by clicking in the cell and then hitting \n# the blue arrow to the left, or by clicking in the cell and pressing Shift+Enter. In a script, \n# you can run code by highlighting the code you want to run and then clicking the blue arrow\n# at the bottom of this window.\n\n## Reading in files\n\n# You can access files from datasets you've added to this kernel in the \"../input/\" directory.\n# You can see the files added to this kernel by running the code below. \n\nlist.files(path = \"../input\")\n\n## Saving data\n\n# If you save any files or images, these will be put in the \"output\" directory. You \n# can see the output directory by committing and running your kernel (using the \n# Commit & Run button) and then checking out the compiled version of your kernel.",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "_kg_hide-output": true,
+        "trusted": true,
+        "_uuid": "535fcb5cdfdeccc945fdffac16e0833c183fc935"
+      },
+      "cell_type": "code",
+      "source": "#load packages\n\n#load packages\nlibrary(tidyverse)\nlibrary(caret)\nlibrary(readr)\nlibrary(corrplot)\nlibrary(yardstick)\nlibrary(MLmetrics)\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "ff3830114cb45b415d043176f5984b3467ee6126"
+      },
+      "cell_type": "code",
+      "source": "#load data\n\ntrain <- read.csv('../input/train.csv')\ntest <- read.csv('../input/test.csv')\nfull = as_tibble(rbind(train %>% select(-Target), test))\n\nfull <- full %>%\n          select(-dependency)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "5a4829a6eebd56c2cead73b724028fd7e2aa446b"
+      },
+      "cell_type": "code",
+      "source": "#look at data\nstr(train) #redelijk weinig observaties en veel kolommen waarvan categorical variables OHE zijn, wat te doen met male/female?\nhead(train)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "1b9c8aabf816e23fec6a5a64e6bf9e56958d2ae7"
+      },
+      "cell_type": "code",
+      "source": "#OHE variables to factor variables\n# list of OHE variables\n\nOHE_features <- c(\"pared\", \"piso\", \"techo\", \"abasta\",  \"sanitario\", \"energcocinar\", \"elimbasu\", \"epared\", \"etecho\", \"eviv\", \"estadocivil\", \"parentesco\", \"instlevel\", \"tipovivi\", \"lugar\", \"area\")\n\n#initialize empty dataframe\nOHE_features_dataframe = data.frame(matrix(ncol = length(OHE_features), nrow = nrow(full)))\n\n\nfor(i in 1:length(OHE_features)){\n  \n  # Grab the feature\n  \n  feature_to_fix = full %>% select(starts_with(OHE_features[i]))\n  \n  # Fix and enter into our new feature matrix\n  \n  OHE_features_dataframe[,i] = as.integer(factor(names(feature_to_fix)[max.col(feature_to_fix)], ordered = FALSE))\n  names(OHE_features_dataframe)[i] = paste0(OHE_features[i],\"_int\")\n  \n}\n\nfull_cat = data.frame(cbind(full,OHE_features_dataframe), stringsAsFactors = FALSE)\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "490545703564d7897a21d770edc6d67b5f3bbe2e"
+      },
+      "cell_type": "code",
+      "source": "#correlation plot\n\n#select numeric variables behalve die zoveel NA hebben\nfull_cat_numeric <- full_cat %>%\n              select(-one_of(unique(grep(paste(OHE_features,collapse=\"|\"),names(full), value=TRUE)))) %>% \n              select_if(is.numeric) %>%\n              select(-v2a1, -v18q1, -rez_esc)\n\n\n\nfull_cor_matrix <- cor(full_cat_numeric, use = \"complete.obs\")\ncorrplot(full_cor_matrix, order = \"hclust\", tl.cex = 0.8) \n#veel hoog gecorreleerde numerieke waardes -> PCA?",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "d43a257ec57ea5481b65bd199d2603742991d050"
+      },
+      "cell_type": "code",
+      "source": "#PCA\nsummary(full_cat_numeric)\nfull_pca <- prcomp(full_cat_numeric, center = TRUE, scale. = TRUE)\n\n#biplot\nbiplot(full_pca)\n\n#screeplot\nfull_pca.var <- full_pca$sdev^2\npve <- full_pca.var / sum(full_pca.var) \n\nplot(pve, xlab = \"PC\", ylab = \"Proportion of variance explained\", ylim = c(0,0.5), xlim = c(0, 20), type = \"b\")\n#Elbow bij PC6, maar eerste twee leggen al meer dan 30% van de variance uit\n#Elbow bij PC6, maar eerste twee leggen al meer dan 30% van de variance uit",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "65d93743b503db79baa8e01d9456732b0397c330"
+      },
+      "cell_type": "code",
+      "source": "full_count = full %>%  group_by(idhogar) %>% summarise(n = n())\n\nfull_household_summaries = full_cat %>% \n  select_if(is.numeric) %>% \n  cbind(full_cat %>% select(idhogar)) %>% \n  select(\n    idhogar,\n    escolari,\n    rez_esc,\n    male,\n    female,\n    contains(\"estadocivil\"),\n    contains(\"parentesco\"),\n    contains(\"instlevel\"),\n    age,\n    dis\n\n\n    \n  ) %>% \n  group_by(idhogar) %>% \n  summarise_all((funs(mean(., na.rm = TRUE), sum(., na.rm = TRUE), sd(.,na.rm = TRUE), max(.,na.rm = TRUE), min(.,na.rm = TRUE)))) %>%\n  left_join(full_count) %>% \n  mutate(\n    \n    # Create some household statistics\n    \n    Ratio_disabled_to_male = dis_sum/male_sum,\n    Ratio_disabled_to_female = dis_sum/female_sum,\n    Ratio_male_to_female = male_sum/female_sum,\n    \n    \n    Age_range = age_max-age_min,\n    Age_ratio = age_max/age_min,\n    \n    Schooling_range = escolari_max - escolari_min,\n    Schooling_ratio = escolari_max/escolari_min\n    \n    \n  ) %>% \n  mutate_all(funs(ifelse(is.nan(.), NA, .))) %>% \n  mutate_all(funs(ifelse(is.infinite(.), NA, .)))\n  \n\n  full_cat = full_cat %>% mutate(idhogar = as.numeric(idhogar)) %>%\n  left_join(full_household_summaries, c(\"idhogar\" = \"idhogar\"))\n  \n  \n  full_cat = full_cat %>% select( -idhogar, -n)\nglimpse(full_cat)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "5c527933581debc353219f1d8d09747622119c62"
+      },
+      "cell_type": "code",
+      "source": "#missing values\nsapply(full_cat, function(x)sum(is.na(x)))\n\n#v2a1, v18q1, rez_esc hebben wel erg veel missing values. MICE heeft hier waarschijnlijk ook weinig nut. Voor meaneduc is mean imputation wel genoeg (weinig missing)\n\nfull_cat <- full_cat %>%\n                  mutate(meaneduc = ifelse(is.na(meaneduc),mean(meaneduc, na.rm = TRUE), meaneduc),\n                         SQBmeaned = ifelse(is.na(SQBmeaned),mean(SQBmeaned, na.rm = TRUE), SQBmeaned))\n       \nfull_cat <- full_cat %>% select_if(~ !any(is.na(.)))\n                                   \n                                   \nsummary(full_cat)",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "ff6c293b438ba9123f24a124525c2c02151c9850"
+      },
+      "cell_type": "code",
+      "source": "#model, gezien de scheve verdeling in de target variable is het nodig om te upsamplen, gezien de verhouding tussen trainin en de test is CV nodig\n\ntrain_new = full_cat[1:nrow(train),]\ntest_new = full_cat[(nrow(train)+1):nrow(full),]\n\ntrain_new$Target <- train$Target\nset.seed(20180727)\n\ntrain_cat <- train_new %>%\n              #select(-v2a1, -v18q1, -rez_esc) %>%\n               select(-one_of(unique(grep(paste(OHE_features,collapse=\"|\"),names(full), value=TRUE)))) \n\n\ntest_cat <- test_new %>%\n              #select(-v2a1, -v18q1, -rez_esc) %>%\n               select(-one_of(unique(grep(paste(OHE_features,collapse=\"|\"),names(full), value=TRUE)))) \n\n\n\nin_train <- createDataPartition(train_cat$Target, p = 0.6, list = FALSE)\ntraining <- train_cat[in_train, ]\ntesting <- train_cat[-in_train, ]\n\n\n\ntraining <- training %>%\n              select(-Id)\n\ntesting <- testing %>%\n              select(-Id)\n\n#trainControl, nog upsampling nodig?\ntc <- trainControl(allowParallel = TRUE, method = \"repeatedcv\", number = 10, repeats = 3,   sampling = \"smote\")\n\n#tunegrid\n#xgb.grid <- expand.grid(nrounds = 500,\n                            #eta = c(0.01, 0.001, 0.0001),\n                           #max_depth = c(2,4,8,14),\n                           # gamma = 0,\n                            #colsample_bytree = 0.8,\n                            #min_child_weight = 1,\n                           #subsample = 0.8\n                            \n                      # )\n#nnet.grid <- expand.grid(.decay = c(0.5, 0.1), .size = c(5, 6, 7))\n#rf\n\nrfModel <- train(as.factor(Target) ~. , data = training, method = \"xgbTree\",  trainControl = tc, preProc = c(\"center\", \"scale\", \"nzv\"))\n\n\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "trusted": true,
+        "_uuid": "30fa94b02b2e431a546611b9678610a1538cfccc"
+      },
+      "cell_type": "code",
+      "source": "test_cat_nietmeenemen <- c(\"Id\", \"idhogar\", \"Target\")\n\nrf_pred <- predict(rfModel, test_cat[, !(names(test_cat) %in% test_cat_nietmeenemen)])\n\ntest_cat[, (ncol(test_cat)+1)] <- rf_pred\n\nglimpse(test_cat)\n\nsubmission <- test_cat %>%\n                mutate(Target = V215) %>%\n                select(Id, Target) \n\n\nwrite.csv(submission, file = \"submission.csv\", row.names = FALSE)",
+      "execution_count": null,
+      "outputs": []
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "display_name": "R",
+      "language": "R",
+      "name": "ir"
+    },
+    "language_info": {
+      "mimetype": "text/x-r-source",
+      "name": "R",
+      "pygments_lexer": "r",
+      "version": "3.4.2",
+      "file_extension": ".r",
+      "codemirror_mode": "r"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 1
+}
